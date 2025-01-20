@@ -1,0 +1,13 @@
+Instructions: Identify content for redaction only based on the criteria in the Redaction Specifications. Do not redact anything else.
+
+Expected response format should be a JSON:
+{
+    "redactions": [
+        {
+            "text": "Text fragment to redact",
+            "bounding_box": [x0, y0, x1, y1],
+            "page_number": page_number
+        },
+        ...
+    ]
+}
