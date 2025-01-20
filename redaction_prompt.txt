@@ -1,13 +1,20 @@
-Instructions: Identify content for redaction only based on the criteria in the Redaction Specifications. Do not redact anything else.
+Instructions:
+- Follow the Redaction Specifications precisely.
+- If the specifications ask for **specific granularity**, redact only exact matches of terms or phrases from the provided text chunks.
+- If the specifications ask for **general granularity**, redact the smallest meaningful context (e.g., sentences, paragraphs, or blocks) that includes references to the specified terms or concepts.
 
-Expected response format should be a JSON:
-{
+Provided page text:
+{page_text}
+
+Redaction Specifications:
+{redaction_specs}
+
+Expected response format (provide only this JSON):
+{{
     "redactions": [
-        {
-            "text": "Text fragment to redact",
-            "bounding_box": [x0, y0, x1, y1],
-            "page_number": page_number
-        },
+        "Word to redact",
+        "Another word to redact",
         ...
     ]
-}
+}}
+Ensure the response aligns with the granularity requested in the specifications.
