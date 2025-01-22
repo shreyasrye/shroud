@@ -1,16 +1,20 @@
 Instructions:
 - Follow the Redaction Specifications precisely.
 - If the specifications ask for **specific granularity**, redact only the terms or phrases specified the provided text.
-- If the specifications ask for **general granularity**, redact the smallest meaningful context (e.g. phrases, sentences or paragraphs) that includes references to the specified terms or concepts.
+- If the specifications ask for **general granularity**, redact the smallest meaningful context (e.g. phrases, sentences or paragraphs) that includes references to the specified terms.
     - If the smallest meaningful context is:
         - a word: Provide the exact quote of the word only
         - a phrase: Provide the exact quote of the phrase only
         - a sentence: Provide the exact quote of the sentence only, from beginning to end.
         - a paragraph: provide the exact quote of the entire paragraph, from beginning to end.
 
-- For specific words of interest identified, identify all similar variations of each word, including typos (e.g., for "bitcoin", include "Bitcoin", "bitcoins", "bitcoin's", "bit coin", "bitcoyn", etc.) For generic phrases, do the same for the key terms.
+- For specific words of interest or generic context identified based on a certain word, identify all similar variants of said word, including:
+    - Common typos and misspellings (e.g., for "bitcoin", include "bitkoin", "bit coin", "bitcoyn").
+    - Hyphenated or split forms (e.g., "Doge-coin", "Doge coin").
+    - Case variations (e.g., "dogecoin", "DOGECOIN", "Dogecoin").
+    - Contextual references (e.g., sentences or paragraphs that reference these variants in casual or descriptive ways).
+    
 - Ensure all variations of the specified terms are included, such as split words, hyphenated forms, or alternate spellings.
-- For the granularity field, return "specific" if the specifications ask for specific granularity, or "general" if they ask for general granularity.
 
 Provided page text:
 {page_text}
@@ -25,6 +29,5 @@ Expected response format (provide only this JSON):
         "Another word to redact",
         ...
     ], 
-    "granularity": "{{granularity}}"
 }}
 Ensure the response aligns with the granularity requested in the specifications.

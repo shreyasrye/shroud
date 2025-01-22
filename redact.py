@@ -13,31 +13,44 @@ def redact_pdf(input_folder, output_folder, redaction_specs):
         if pdf_file.endswith(".pdf"):
             process_pdf(os.path.join(input_folder, pdf_file), output_folder, redaction_specs)
 
-def extract_bounding_boxes(page):
-    bounding_boxes = []
-    page_data = page.get_text("dict")
-    for block in page_data["blocks"]:
-        for line in block.get("lines", []):
-            for span in line.get("spans", []):
-                bounding_boxes.append({
-                    "text": span["text"],
-                    "bounding_box": span["bbox"]
-                })
-    return bounding_boxes
+def get_words_in_span(page, span_bbox, words_of_interest=None):
+    words = page.get_text("words")
+    span_words = []
 
-def apply_word_level_redactions(page, redacted_word_list):
+    for word in words:
+        print(f"Word: {word}")
+        word_bbox = pymupdf.Rect(word[:4])
+        if span_bbox.intersects(word_bbox):
+            if words_of_interest is None or word[4].strip(',"!;') in words_of_interest:
+                span_words.append({
+                    "word": word[4], 
+                    "bbox": word_bbox
+                })
+    return span_words
+
+def combine_word_bboxes(word_bboxes):
+    if not word_bboxes:
+        return None 
+
+    x0 = min(bbox[0] for bbox in word_bboxes)
+    y0 = min(bbox[1] for bbox in word_bboxes)
+    x1 = max(bbox[2] for bbox in word_bboxes)
+    y1 = max(bbox[3] for bbox in word_bboxes) 
+
+    return pymupdf.Rect(x0, y0, x1, y1)
+
+def apply_word_level_redactions(page, word):
     """
     Apply word-level redactions using 'words' data from the page.
     """
     word_bounding_boxes = page.get_text("words")
-    for redacted_word in redacted_word_list:
-        for word_tup in word_bounding_boxes:
-            if redacted_word in word_tup[4]:
-                print(f"Redacting word: {redacted_word} found in {word_tup[:4]}")
-                rect = pymupdf.Rect(word_tup[0], word_tup[1], word_tup[2], word_tup[3])
-                page.add_redact_annot(rect, fill=(0, 0, 0))
+    for word_tup in word_bounding_boxes:
+        if word in word_tup[4]:
+            print(f"Redacting word: {word} found in {word_tup[:4]}")
+            rect = pymupdf.Rect(word_tup[0], word_tup[1], word_tup[2], word_tup[3])
+            page.add_redact_annot(rect, fill=(0, 0, 0))
 
-def apply_span_level_redactions(page, phrases):
+def apply_span_level_redactions(page, phrase):
     """
     Apply span-level redactions by matching redacted words to spans.
     """
@@ -45,7 +58,6 @@ def apply_span_level_redactions(page, phrases):
     spans_with_positions = []
     reconstructed_text = ""
 
-    # Collect spans and maintain position tracking
     for block in text_dict["blocks"]:
         for line in block.get("lines", []):
             for span in line.get("spans", []):
@@ -57,37 +69,41 @@ def apply_span_level_redactions(page, phrases):
                     "end": span_end,
                     "bbox": span["bbox"],
                 })
-                reconstructed_text += span_text + " "  # Add space for separation
+                reconstructed_text += span_text + " "
 
-    print(f"Reconstructed text: {reconstructed_text}")
+    reconstructed_text = reconstructed_text.replace("  ", " ")
+    start_idx = reconstructed_text.find(phrase)
 
-    # Iterate through phrases
-    for phrase in phrases:
-        start_idx = reconstructed_text.find(phrase)
-        if start_idx != -1:
-            end_idx = start_idx + len(phrase)
-            phrase_bboxes = []
+    if start_idx != -1:
+        end_idx = start_idx + len(phrase)
+        phrase_bboxes = []
+        print(f"Phrase '{phrase}' found on the page at position: ({start_idx}, {end_idx})")
 
-            # Match spans that overlap with the phrase
-            for span in spans_with_positions:
-                if span["start"] < end_idx and span["end"] > start_idx:
-                    phrase_bboxes.append(span["bbox"])
-                    print(f"Phrase '{phrase}' overlaps with span: '{reconstructed_text[span['start']:span['end']]}'")
+        for span in spans_with_positions:
+            if span["start"] < end_idx and span["end"] > start_idx:
+                phrase_bboxes.append(span["bbox"])
+                print(f"Phrase '{phrase}' overlaps with span: '{reconstructed_text[span['start']:span['end']]}'")
 
-            # Combine bounding boxes
-            if phrase_bboxes:
+        if phrase_bboxes:
+            if len(phrase_bboxes) == 1:
+                for bbox in phrase_bboxes:
+                    words_of_interest = phrase.split()
+                    span_word_dict = get_words_in_span(page, pymupdf.Rect(bbox), words_of_interest)
+                    final_bbox = combine_word_bboxes([word["bbox"] for word in span_word_dict])
+            else:
                 x0 = min(bbox[0] for bbox in phrase_bboxes)
                 y0 = min(bbox[1] for bbox in phrase_bboxes)
                 x1 = max(bbox[2] for bbox in phrase_bboxes)
                 y1 = max(bbox[3] for bbox in phrase_bboxes)
+                final_bbox = (x0, y0, x1, y1)
 
-                # Apply redaction
-                rect = pymupdf.Rect(x0, y0, x1, y1)
-                page.add_redact_annot(rect, fill=(0, 0, 0))
-                print(f"Redacting phrase: '{phrase}' with bbox: ({x0}, {y0}, {x1}, {y1})")
-        else:
-            print(f"Phrase '{phrase}' not found on the page.")
-
+            rect = pymupdf.Rect(final_bbox)
+            page.add_redact_annot(rect, fill=(0, 0, 0))
+            print(f"Redacting phrase: '{phrase}' with bbox: {final_bbox}")
+    else:
+        print(f"Phrase '{phrase}' not found on the page.")
+        
+ 
 
 def process_pdf(file_path, output_folder, redaction_specs):
     doc = pymupdf.open(file_path)
@@ -125,15 +141,13 @@ def process_pdf(file_path, output_folder, redaction_specs):
         redacted_words = json.loads(response.choices[0].message.content)
         redacted_word_list = redacted_words["redactions"]
         print(f"Text to be redacted for page {page_num + 1}: {redacted_word_list}")
-
-        if redacted_words["granularity"] == "specific":
-            print(f"Applying word-level redactions on page {page_num + 1}")
-            apply_word_level_redactions(page, redacted_word_list)
-        elif redacted_words["granularity"] == "general":
-            # print(f"Extracting bounding boxes for span-level redactions on page {page_num + 1}")
-            # bounding_boxes = extract_bounding_boxes(page)
-            print(f"Applying span-level redactions on page {page_num + 1}")
-            apply_span_level_redactions(page, redacted_word_list)
+        for redacted_word in redacted_word_list:
+            if " " not in redacted_word:
+                print(f"Applying word-level redactions for {redacted_word} on page {page_num + 1}")
+                apply_word_level_redactions(page, redacted_word)
+            else:
+                print(f"Applying span-level redactions for {redacted_word} on page {page_num + 1}")
+                apply_span_level_redactions(page, redacted_word)
                     
         page.apply_redactions()
     
