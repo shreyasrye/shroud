@@ -3,22 +3,33 @@ import pymupdf
 import json
 from openai import OpenAI
 from difflib import SequenceMatcher as SM
+from tqdm import tqdm
+import logging
+from datetime import datetime
+
+if not os.path.exists("logs"):
+    os.makedirs("logs")
+log_filename = f"logs/redact_text_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+logging.basicConfig(filename=log_filename, level=logging.INFO, format='%(message)s')
+logger = logging.getLogger()
 
 def load_redaction_specs(file_path):
     with open(file_path, 'r') as file:
         return file.read().strip()
 
 def redact_pdf(input_folder, output_folder, redaction_specs):
-    for pdf_file in os.listdir(input_folder):
-        if pdf_file.endswith(".pdf"):
-            process_pdf(os.path.join(input_folder, pdf_file), output_folder, redaction_specs)
+    pdf_files = [f for f in os.listdir(input_folder) if f.endswith(".pdf")]
+    for pdf_file in tqdm(pdf_files, desc="Processing PDFs"):
+        run_again = True
+        process_pdf(os.path.join(input_folder, pdf_file), output_folder, redaction_specs)
+        while run_again:
+            run_again = process_pdf(os.path.join(output_folder, pdf_file), output_folder, redaction_specs)
 
 def get_words_in_span(page, span_bbox, words_of_interest=None):
     words = page.get_text("words")
     span_words = []
 
     for word in words:
-        print(f"Word: {word}")
         word_bbox = pymupdf.Rect(word[:4])
         if span_bbox.intersects(word_bbox):
             if words_of_interest is None or word[4].strip(',"!;') in words_of_interest:
@@ -39,21 +50,15 @@ def combine_word_bboxes(word_bboxes):
 
     return pymupdf.Rect(x0, y0, x1, y1)
 
-def apply_word_level_redactions(page, word):
-    """
-    Apply word-level redactions using 'words' data from the page.
-    """
+def specific_granularity_bounding(page, word):
     word_bounding_boxes = page.get_text("words")
     for word_tup in word_bounding_boxes:
         if word in word_tup[4]:
-            print(f"Redacting word: {word} found in {word_tup[:4]}")
+            logger.info(f"Redacting word: '{word}' found in bounding box: {word_tup[:4]}")
             rect = pymupdf.Rect(word_tup[0], word_tup[1], word_tup[2], word_tup[3])
             page.add_redact_annot(rect, fill=(0, 0, 0))
 
-def apply_span_level_redactions(page, phrase):
-    """
-    Apply span-level redactions by matching redacted words to spans.
-    """
+def generic_granularity_bounding(page, phrase):
     text_dict = page.get_text("dict")
     spans_with_positions = []
     reconstructed_text = ""
@@ -77,12 +82,12 @@ def apply_span_level_redactions(page, phrase):
     if start_idx != -1:
         end_idx = start_idx + len(phrase)
         phrase_bboxes = []
-        print(f"Phrase '{phrase}' found on the page at position: ({start_idx}, {end_idx})")
+        logger.info(f"Phrase '{phrase}' found on the page at position: ({start_idx}, {end_idx})")
 
         for span in spans_with_positions:
             if span["start"] < end_idx and span["end"] > start_idx:
                 phrase_bboxes.append(span["bbox"])
-                print(f"Phrase '{phrase}' overlaps with span: '{reconstructed_text[span['start']:span['end']]}'")
+                logger.info(f"Phrase '{phrase}' overlaps with span: '{reconstructed_text[span['start']:span['end']]}'")
 
         if phrase_bboxes:
             if len(phrase_bboxes) == 1:
@@ -99,11 +104,9 @@ def apply_span_level_redactions(page, phrase):
 
             rect = pymupdf.Rect(final_bbox)
             page.add_redact_annot(rect, fill=(0, 0, 0))
-            print(f"Redacting phrase: '{phrase}' with bbox: {final_bbox}")
+            logger.info(f"Redacting phrase: '{phrase}' with bounding box: {final_bbox}")
     else:
-        print(f"Phrase '{phrase}' not found on the page.")
-        
- 
+        logger.info(f"Phrase '{phrase}' not found on the page.")
 
 def process_pdf(file_path, output_folder, redaction_specs):
     doc = pymupdf.open(file_path)
@@ -111,7 +114,7 @@ def process_pdf(file_path, output_folder, redaction_specs):
         config = json.load(config_file)
     client = OpenAI(api_key=config["openai"]["api_key"])
     
-    for page_num, page in enumerate(doc):
+    for page_num, page in enumerate(tqdm(doc, desc="Processing Pages")):
         page_text = page.get_text("text")
         
         with open(PROMPT_FILE) as prompt_file:
@@ -140,21 +143,28 @@ def process_pdf(file_path, output_folder, redaction_specs):
 
         redacted_words = json.loads(response.choices[0].message.content)
         redacted_word_list = redacted_words["redactions"]
-        print(f"Text to be redacted for page {page_num + 1}: {redacted_word_list}")
+        logger.info(f"\n_____________________________")
+        logger.info(f"| PAGE {page_num + 1} REDACTION RESULTS |")
+        logger.info(f"_____________________________\n")
+        logger.info(f"Text to be redacted for page {page_num + 1}: {redacted_word_list}\n")
+        
+        if not redacted_word_list:
+            return False
         for redacted_word in redacted_word_list:
             if " " not in redacted_word:
-                print(f"Applying word-level redactions for {redacted_word} on page {page_num + 1}")
-                apply_word_level_redactions(page, redacted_word)
+                tqdm.write(f"Applying word-level redactions on page {page_num + 1}")
+                specific_granularity_bounding(page, redacted_word)
             else:
-                print(f"Applying span-level redactions for {redacted_word} on page {page_num + 1}")
-                apply_span_level_redactions(page, redacted_word)
+                tqdm.write(f"Applying span-level redactions on page {page_num + 1}")
+                generic_granularity_bounding(page, redacted_word)
                     
         page.apply_redactions()
     
     output_path = os.path.join(output_folder, os.path.basename(file_path))
     doc.save(output_path, deflate=True)
     doc.close()
-    print(f"Processed and saved: {output_path}")
+    tqdm.write(f"Processed and saved: {output_path}")
+    return True
 
 if __name__ == "__main__":
     INPUT_FOLDER = "./input_pdfs" 
@@ -168,4 +178,4 @@ if __name__ == "__main__":
 
     redact_pdf(INPUT_FOLDER, OUTPUT_FOLDER, specs)
 
-    print("Redaction completed.")
+    tqdm.write("Redaction completed.")
