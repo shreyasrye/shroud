@@ -21,9 +21,11 @@ def redact_pdf(input_folder, output_folder, redaction_specs):
     pdf_files = [f for f in os.listdir(input_folder) if f.endswith(".pdf")]
     for pdf_file in tqdm(pdf_files, desc="Processing PDFs"):
         run_again = True
+        count = 1
         process_pdf(os.path.join(input_folder, pdf_file), output_folder, redaction_specs)
-        while run_again:
+        while run_again and count < 4:
             run_again = process_pdf(os.path.join(output_folder, pdf_file), output_folder, redaction_specs)
+            count += 1
 
 def get_words_in_span(page, span_bbox, words_of_interest=None):
     words = page.get_text("words")
@@ -170,7 +172,7 @@ if __name__ == "__main__":
     INPUT_FOLDER = "./input_pdfs" 
     OUTPUT_FOLDER = "./output_pdfs"  
     SPEC_FILE = "./entities_to_redact.txt" 
-    PROMPT_FILE = "./redaction_prompt.txt"
+    PROMPT_FILE = "./prompts/redaction_prompt.txt"
 
     os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
