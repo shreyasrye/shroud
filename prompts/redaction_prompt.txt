@@ -15,6 +15,7 @@ Instructions:
     - Contextual references (e.g., sentences or paragraphs that reference these variants in casual or descriptive ways).
     
 - Ensure all variations of the specified terms are included, such as split words, hyphenated forms, or alternate spellings.
+- Ensure that all the words/phrases returned are actually detected on the page.
 
 Provided page text:
 {page_text}
@@ -30,4 +31,7 @@ Expected response format (provide only this JSON):
         ...
     ], 
 }}
+
+- If no words/phrases of interest are found in the page text, return JSON with an empty list: {{"redactions": []}}
+
 Ensure the response aligns with the granularity requested in the specifications.
