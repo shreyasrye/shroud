@@ -25,19 +25,21 @@ def extract_images_from_pdf(pdf_path):
     doc = fitz.open(pdf_path)
     images = []
 
+    bboxes = {}
     for page_number in range(len(doc)):
         page = doc[page_number]
         image_list = page.get_images(full=True)
 
         for img in image_list:
             xref = img[0]
+            bboxes[xref] = page.get_image_bbox(img)
             base_image = doc.extract_image(xref)
             image_bytes = base_image["image"]
             image = Image.open(io.BytesIO(image_bytes))
             images.append((page_number, image, xref))
 
     doc.close()
-    return images
+    return images, bboxes
 
 def detect_text_in_images(images, redaction_specs):
     """
@@ -52,7 +54,7 @@ def detect_text_in_images(images, redaction_specs):
     for page_number, image, xref in images:
         base64_image = encode_image(image)
 
-        with open("./prompts/redaction_prompt.txt", "r") as prompt_file:
+        with open("./prompts/redact_images_prompt.txt", "r") as prompt_file:
             redaction_prompt = prompt_file.read().strip()
 
         response = client.chat.completions.create(
@@ -72,15 +74,14 @@ def detect_text_in_images(images, redaction_specs):
         )
 
         detected_text = response.choices[0].message.content
-        print("LLM Response: ", detected_text)
         detected_entities = json.loads(detected_text).get("redactions", [])
 
         if detected_entities:
             entities_to_redact.append((page_number, xref, detected_entities))
-
+    
     return entities_to_redact
 
-def redact_images_in_pdf(input_pdf, output_pdf, redacted_entities):
+def redact_images_in_pdf(input_pdf, output_pdf, redacted_entities, img_bboxes):
     """
     Redact images in the PDF based on detected sensitive text.
     """
@@ -89,14 +90,17 @@ def redact_images_in_pdf(input_pdf, output_pdf, redacted_entities):
     for page_number, xref, entities in redacted_entities:
         page = doc[page_number]
         
+        image_list = page.get_images(full=True)
+        image_bbox = None
         try:
-            # Ensure the image has a valid bounding box
-            image_bbox = page.get_image_bbox(xref)
+            for item in image_list:
+                if item[0] == xref:
+                    image_bbox = img_bboxes.get(xref)
+                    break
             if not image_bbox:
                 print(f"Skipping xref {xref} on page {page_number}: No bounding box found.")
                 continue
 
-            # Add a redaction annotation over the image's bounding box
             page.add_redact_annot(image_bbox, fill=(0, 0, 0))
             page.apply_redactions()
         except ValueError:
@@ -114,9 +118,9 @@ def process_pdf(input_folder, output_folder, redaction_specs):
             input_pdf_path = os.path.join(input_folder, pdf_file)
             output_pdf_path = os.path.join(output_folder, pdf_file)
 
-            images = extract_images_from_pdf(input_pdf_path)
+            images, bboxes = extract_images_from_pdf(input_pdf_path)
             redacted_entities = detect_text_in_images(images, redaction_specs)
-            redact_images_in_pdf(input_pdf_path, output_pdf_path, redacted_entities)
+            redact_images_in_pdf(input_pdf_path, output_pdf_path, redacted_entities, bboxes)
 
 if __name__ == "__main__":
     INPUT_FOLDER = "./input_pdfs"
