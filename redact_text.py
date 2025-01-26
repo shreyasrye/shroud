@@ -2,7 +2,6 @@ import os
 import pymupdf
 import json
 from openai import OpenAI
-from difflib import SequenceMatcher as SM
 from tqdm import tqdm
 import logging
 from datetime import datetime
