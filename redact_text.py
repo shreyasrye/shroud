@@ -14,20 +14,19 @@ logging.basicConfig(filename=log_filename, level=logging.INFO, format='%(message
 logger = logging.getLogger()
 
 def load_redaction_specs(file_path):
+    """Load redaction specifications from a file."""
     with open(file_path, 'r') as file:
         return file.read().strip()
 
-def redact_pdf(input_folder, output_folder, redaction_specs):
+def redact_pdf(input_folder, intermediate_folder, output_folder, redaction_specs):
+    """Redact text in PDF files based on specifications."""
     pdf_files = [f for f in os.listdir(input_folder) if f.endswith(".pdf")]
     for pdf_file in tqdm(pdf_files, desc="Processing PDFs"):
-        run_again = True
-        count = 1
-        process_pdf(os.path.join(input_folder, pdf_file), output_folder, redaction_specs)
-        while run_again and count < 4:
-            run_again = process_pdf(os.path.join(output_folder, pdf_file), output_folder, redaction_specs)
-            count += 1
+        intermediate_path = process_pdf(os.path.join(input_folder, pdf_file), intermediate_folder, redaction_specs)
+        process_pdf(intermediate_path, output_folder, redaction_specs)
 
 def get_words_in_span(page, span_bbox, words_of_interest=None):
+    """Get words within a specific bounding box on a PDF page."""
     words = page.get_text("words")
     span_words = []
 
@@ -42,6 +41,7 @@ def get_words_in_span(page, span_bbox, words_of_interest=None):
     return span_words
 
 def combine_word_bboxes(word_bboxes):
+    """Combine multiple word bounding boxes into one."""
     if not word_bboxes:
         return None 
 
@@ -53,6 +53,7 @@ def combine_word_bboxes(word_bboxes):
     return pymupdf.Rect(x0, y0, x1, y1)
 
 def specific_granularity_bounding(page, word):
+    """Redact a specific word on a PDF page."""
     word_bounding_boxes = page.get_text("words")
     for word_tup in word_bounding_boxes:
         if word in word_tup[4]:
@@ -61,6 +62,7 @@ def specific_granularity_bounding(page, word):
             page.add_redact_annot(rect, fill=(0, 0, 0))
 
 def generic_granularity_bounding(page, phrase):
+    """Redact a phrase on a PDF page."""
     text_dict = page.get_text("dict")
     spans_with_positions = []
     reconstructed_text = ""
@@ -94,28 +96,41 @@ def generic_granularity_bounding(page, phrase):
         if phrase_bboxes:
             if len(phrase_bboxes) == 1:
                 for bbox in phrase_bboxes:
-                    words_of_interest = phrase.split()
-                    span_word_dict = get_words_in_span(page, pymupdf.Rect(bbox), words_of_interest)
-                    final_bbox = combine_word_bboxes([word["bbox"] for word in span_word_dict])
+                    try:
+                        words_of_interest = phrase.split()
+                        span_word_dict = get_words_in_span(page, pymupdf.Rect(bbox), words_of_interest)
+                        final_bbox = combine_word_bboxes([word["bbox"] for word in span_word_dict])
+                        if final_bbox:
+                            rect = pymupdf.Rect(final_bbox)
+                            page.add_redact_annot(rect, fill=(0, 0, 0))
+                            logger.info(f"Redacting phrase: '{phrase}' with bounding box: {final_bbox}")
+                        else:
+                            logger.warning(f"No bounding box found for phrase: '{phrase}'")
+                    except Exception as e:
+                        logger.error(f"Error processing phrase '{phrase}': {e}")
             else:
-                x0 = min(bbox[0] for bbox in phrase_bboxes)
-                y0 = min(bbox[1] for bbox in phrase_bboxes)
-                x1 = max(bbox[2] for bbox in phrase_bboxes)
-                y1 = max(bbox[3] for bbox in phrase_bboxes)
-                final_bbox = (x0, y0, x1, y1)
+                try:
+                    x0 = min(bbox[0] for bbox in phrase_bboxes)
+                    y0 = min(bbox[1] for bbox in phrase_bboxes)
+                    x1 = max(bbox[2] for bbox in phrase_bboxes)
+                    y1 = max(bbox[3] for bbox in phrase_bboxes)
+                    final_bbox = (x0, y0, x1, y1)
 
-            rect = pymupdf.Rect(final_bbox)
-            page.add_redact_annot(rect, fill=(0, 0, 0))
-            logger.info(f"Redacting phrase: '{phrase}' with bounding box: {final_bbox}")
+                    rect = pymupdf.Rect(final_bbox)
+                    page.add_redact_annot(rect, fill=(0, 0, 0))
+                    logger.info(f"Redacting phrase: '{phrase}' with bounding box: {final_bbox}")
+                except ValueError as e:
+                    logger.error(f"No bounds found for{phrase}': {e}")
     else:
         logger.info(f"Phrase '{phrase}' not found on the page.")
 
 def process_pdf(file_path, output_folder, redaction_specs):
+    """Process a PDF file and apply redactions based on specifications."""
     doc = pymupdf.open(file_path)
     with open("config.json") as config_file:
         config = json.load(config_file)
     client = OpenAI(api_key=config["openai"]["api_key"])
-    
+    run_again = True
     for page_num, page in enumerate(tqdm(doc, desc="Processing Pages")):
         page_text = page.get_text("text")
         
@@ -151,7 +166,7 @@ def process_pdf(file_path, output_folder, redaction_specs):
         logger.info(f"Text to be redacted for page {page_num + 1}: {redacted_word_list}\n")
         
         if not redacted_word_list:
-            return False
+            run_again = False
         for redacted_word in redacted_word_list:
             if " " not in redacted_word:
                 tqdm.write(f"Applying word-level redactions on page {page_num + 1}")
@@ -166,18 +181,22 @@ def process_pdf(file_path, output_folder, redaction_specs):
     doc.save(output_path, deflate=True)
     doc.close()
     tqdm.write(f"Processed and saved: {output_path}")
-    return True
+    return output_path
 
 if __name__ == "__main__":
     INPUT_FOLDER = "./input_pdfs" 
-    OUTPUT_FOLDER = "./output_pdfs"  
+    PARTIALLY_REDACTED_FOLDER = "./partially_redacted_pdfs"
+    OUTPUT_FOLDER = "./output_pdfs"
     SPEC_FILE = "./entities_to_redact.txt" 
     PROMPT_FILE = "./prompts/redaction_prompt.txt"
+
+    if not os.path.exists(PARTIALLY_REDACTED_FOLDER):
+        os.makedirs(PARTIALLY_REDACTED_FOLDER)
 
     os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
     specs = load_redaction_specs(SPEC_FILE)
 
-    redact_pdf(INPUT_FOLDER, OUTPUT_FOLDER, specs)
+    redact_pdf(INPUT_FOLDER, PARTIALLY_REDACTED_FOLDER, OUTPUT_FOLDER, specs)
 
     tqdm.write("Redaction completed.")
