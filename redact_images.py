@@ -123,14 +123,16 @@ def process_pdf(input_folder, output_folder, redaction_specs):
             redact_images_in_pdf(input_pdf_path, output_pdf_path, redacted_entities, bboxes)
 
 if __name__ == "__main__":
-    INPUT_FOLDER = "./input_pdfs"
+    PARTIALLY_REDACTED_FOLDER = "./partially_redacted_pdfs"
     OUTPUT_FOLDER = "./output_pdfs"
     SPEC_FILE = "./entities_to_redact.txt"
 
     os.makedirs(OUTPUT_FOLDER, exist_ok=True)
+    if not os.path.exists(PARTIALLY_REDACTED_FOLDER):
+        os.makedirs(PARTIALLY_REDACTED_FOLDER)
 
     specs = load_redaction_specs(SPEC_FILE)
 
-    process_pdf(INPUT_FOLDER, OUTPUT_FOLDER, specs)
+    process_pdf(PARTIALLY_REDACTED_FOLDER, OUTPUT_FOLDER, specs)
 
     print("Image-based redaction completed.")

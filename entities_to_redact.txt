@@ -1,1 +1,1 @@
-specific words only (not sentences or paragraphs) that mention specific cryptocurrencies like Bitcoin, Dogecoin etc. only, not generic terms like "crypto" or "cryptocurrencies" itself
+Mentions of Bitcoin, and any logos pertaining to bitcoin
