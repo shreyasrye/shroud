@@ -22,6 +22,7 @@ def redact_pdf(input_folder, intermediate_folder, output_folder, redaction_specs
     pdf_files = [f for f in os.listdir(input_folder) if f.endswith(".pdf")]
     for pdf_file in tqdm(pdf_files, desc="Processing PDFs"):
         intermediate_path = process_pdf(os.path.join(input_folder, pdf_file), intermediate_folder, redaction_specs)
+        tqdm.write(f"Reprocessing: {intermediate_path}")
         process_pdf(intermediate_path, output_folder, redaction_specs)
 
 def get_words_in_span(page, span_bbox, words_of_interest=None):
@@ -129,7 +130,6 @@ def process_pdf(file_path, output_folder, redaction_specs):
     with open("config.json") as config_file:
         config = json.load(config_file)
     client = OpenAI(api_key=config["openai"]["api_key"])
-    run_again = True
     for page_num, page in enumerate(tqdm(doc, desc="Processing Pages")):
         page_text = page.get_text("text")
         
@@ -164,16 +164,12 @@ def process_pdf(file_path, output_folder, redaction_specs):
         logger.info(f"_____________________________\n")
         logger.info(f"Text to be redacted for page {page_num + 1}: {redacted_word_list}\n")
         
-        if not redacted_word_list:
-            run_again = False
         for redacted_word in redacted_word_list:
             if " " not in redacted_word:
-                tqdm.write(f"Applying word-level redactions on page {page_num + 1}")
                 specific_granularity_bounding(page, redacted_word)
             else:
-                tqdm.write(f"Applying span-level redactions on page {page_num + 1}")
                 generic_granularity_bounding(page, redacted_word)
-                    
+        tqdm.write(f"Applied redactions on page {page_num + 1}")      
         page.apply_redactions()
     
     output_path = os.path.join(output_folder, os.path.basename(file_path))
