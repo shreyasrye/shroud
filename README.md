@@ -1,4 +1,4 @@
-*# Shroud: PDF Redaction
+# Shroud: PDF Redaction
 
 These scripts perform **text and image redaction** on PDFs using AI-powered text detection and PyMuPDF. It consists of two python scripts:
 1. `redact_text.py`: Redacts sensitive text based on predefined specifications.
