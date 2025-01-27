@@ -127,8 +127,13 @@ def generic_granularity_bounding(page, phrase):
 def process_pdf(file_path, output_folder, redaction_specs):
     """Process a PDF file and apply redactions based on specifications."""
     doc = pymupdf.open(file_path)
-    with open("config.json") as config_file:
-        config = json.load(config_file)
+    try:
+        with open("config.json") as config_file:
+            config = json.load(config_file)
+    except FileNotFoundError:
+        tqdm.write("Config file not found.")
+        logger.error("Config file not found.")
+        return
     client = OpenAI(api_key=config["openai"]["api_key"])
     for page_num, page in enumerate(tqdm(doc, desc="Processing Pages")):
         page_text = page.get_text("text")

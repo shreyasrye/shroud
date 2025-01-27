@@ -1,4 +1,4 @@
-# Shroud: PDF Redaction
+*# Shroud: PDF Redaction
 
 These scripts perform **text and image redaction** on PDFs using AI-powered text detection and PyMuPDF. It consists of two python scripts:
 1. `redact_text.py`: Redacts sensitive text based on predefined specifications.
@@ -21,6 +21,17 @@ Ensure you have the following installed:
 
 ---
 
+## OpenAI key configuration:
+The scripts use a config.json file to store your OpenAI API key. To configure your key, create a file named `config.json` in the root directory with the following format:
+```json
+{
+    "openai": {
+        "api_key": "openai-api-key"
+    }
+}
+```
+---
+
 ## Running
 Run the shell script:
 `run.sh`
@@ -28,3 +39,4 @@ Run the shell script:
 If necessary, make the script executable before running:
 `chmod +x run.sh`
 
+*
