@@ -19,6 +19,14 @@ Ensure you have the following installed:
 - Python 3.8 or higher
 - pip (Python package manager)
 
+To insall the required packages, run:
+
+`./install.sh`
+
+If necessary, make the script executable before running:
+
+`chmod +x install.sh`
+
 ---
 
 ## OpenAI key configuration:
@@ -39,4 +47,4 @@ Run the shell script:
 If necessary, make the script executable before running:
 `chmod +x run.sh`
 
-*
+---
