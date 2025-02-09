@@ -12,11 +12,6 @@ log_filename = f"logs/redact_text_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log
 logging.basicConfig(filename=log_filename, level=logging.INFO, format='%(message)s')
 logger = logging.getLogger()
 
-def load_redaction_specs(file_path):
-    """Load redaction specifications from a file."""
-    with open(file_path, 'r') as file:
-        return file.read().strip()
-
 def redact_pdf(input_folder, intermediate_folder, output_folder, redaction_specs):
     """Redact text in PDF files based on specifications."""
     pdf_files = [f for f in os.listdir(input_folder) if f.endswith(".pdf")]
@@ -25,104 +20,44 @@ def redact_pdf(input_folder, intermediate_folder, output_folder, redaction_specs
         tqdm.write(f"Reprocessing: {intermediate_path}")
         process_pdf(intermediate_path, output_folder, redaction_specs)
 
-def get_words_in_span(page, span_bbox, words_of_interest=None):
-    """Get words within a specific bounding box on a PDF page."""
-    words = page.get_text("words")
-    span_words = []
+def chunk_text_sliding_window(text, max_chunk_size=10):
+    """
+    Breaks a sentence into overlapping chunks while preserving word order.
+    """
+    words = text.split()  # Split phrase into words
+    if len(words) <= max_chunk_size:
+        return [text]  # If phrase is short, return as-is
 
-    for word in words:
-        word_bbox = pymupdf.Rect(word[:4])
-        if span_bbox.intersects(word_bbox):
-            if words_of_interest is None or word[4].strip(',"!;') in words_of_interest:
-                span_words.append({
-                    "word": word[4], 
-                    "bbox": word_bbox
-                })
-    return span_words
+    chunks = []
+    for i in range(0, len(words), max_chunk_size // 2):
+        chunk = " ".join(words[i:i + max_chunk_size])
+        chunks.append(chunk)
+        if i + max_chunk_size >= len(words):\
+            break
 
-def combine_word_bboxes(word_bboxes):
-    """Combine multiple word bounding boxes into one."""
-    if not word_bboxes:
-        return None 
+    return chunks
 
-    x0 = min(bbox[0] for bbox in word_bboxes)
-    y0 = min(bbox[1] for bbox in word_bboxes)
-    x1 = max(bbox[2] for bbox in word_bboxes)
-    y1 = max(bbox[3] for bbox in word_bboxes) 
+def bound_phrase(page, phrase):
+    """
+    Searches for a phrase in a PDF page by breaking it into overlapping chunks.
+    """
+    normalized_phrase = phrase.replace("“", '"').replace("”", '"')
+    chunks = chunk_text_sliding_window(normalized_phrase)
 
-    return pymupdf.Rect(x0, y0, x1, y1)
+    all_bboxes = []
+    
+    for chunk in chunks:
+        bboxes = page.search_for(chunk)
+        if bboxes:
+            all_bboxes.extend(bboxes)
 
-def specific_granularity_bounding(page, word):
-    """Redact a specific word on a PDF page."""
-    word_bounding_boxes = page.get_text("words")
-    for word_tup in word_bounding_boxes:
-        if word in word_tup[4]:
-            logger.info(f"Redacting word: '{word}' found in bounding box: {word_tup[:4]}")
-            rect = pymupdf.Rect(word_tup[0], word_tup[1], word_tup[2], word_tup[3])
-            page.add_redact_annot(rect, fill=(0, 0, 0))
-
-def generic_granularity_bounding(page, phrase):
-    """Redact a phrase on a PDF page."""
-    text_dict = page.get_text("dict")
-    spans_with_positions = []
-    reconstructed_text = ""
-
-    for block in text_dict["blocks"]:
-        for line in block.get("lines", []):
-            for span in line.get("spans", []):
-                span_start = len(reconstructed_text)
-                span_text = span["text"]
-                span_end = span_start + len(span_text)
-                spans_with_positions.append({
-                    "start": span_start,
-                    "end": span_end,
-                    "bbox": span["bbox"],
-                })
-                reconstructed_text += span_text + " "
-
-    reconstructed_text = reconstructed_text.replace("  ", " ")
-    start_idx = reconstructed_text.find(phrase)
-
-    if start_idx != -1:
-        end_idx = start_idx + len(phrase)
-        phrase_bboxes = []
-        logger.info(f"Phrase '{phrase}' found on the page at position: ({start_idx}, {end_idx})")
-
-        for span in spans_with_positions:
-            if span["start"] < end_idx and span["end"] > start_idx:
-                phrase_bboxes.append(span["bbox"])
-                logger.info(f"Phrase '{phrase}' overlaps with span: '{reconstructed_text[span['start']:span['end']]}'")
-
-        if phrase_bboxes:
-            if len(phrase_bboxes) == 1:
-                for bbox in phrase_bboxes:
-                    try:
-                        words_of_interest = phrase.split()
-                        span_word_dict = get_words_in_span(page, pymupdf.Rect(bbox), words_of_interest)
-                        final_bbox = combine_word_bboxes([word["bbox"] for word in span_word_dict])
-                        if final_bbox:
-                            rect = pymupdf.Rect(final_bbox)
-                            page.add_redact_annot(rect, fill=(0, 0, 0))
-                            logger.info(f"Redacting phrase: '{phrase}' with bounding box: {final_bbox}")
-                        else:
-                            logger.warning(f"No bounding box found for phrase: '{phrase}'")
-                    except Exception as e:
-                        logger.error(f"Error processing phrase '{phrase}': {e}")
-            else:
-                try:
-                    x0 = min(bbox[0] for bbox in phrase_bboxes)
-                    y0 = min(bbox[1] for bbox in phrase_bboxes)
-                    x1 = max(bbox[2] for bbox in phrase_bboxes)
-                    y1 = max(bbox[3] for bbox in phrase_bboxes)
-                    final_bbox = (x0, y0, x1, y1)
-
-                    rect = pymupdf.Rect(final_bbox)
-                    page.add_redact_annot(rect, fill=(0, 0, 0))
-                    logger.info(f"Redacting phrase: '{phrase}' with bounding box: {final_bbox}")
-                except ValueError as e:
-                    logger.error(f"No bounds found for{phrase}': {e}")
+    if all_bboxes:
+        for bbox in all_bboxes:
+            page.add_redact_annot(bbox, fill=(0, 0, 0))
+        return all_bboxes
     else:
-        logger.info(f"Phrase '{phrase}' not found on the page.")
+        logger.warning(f"Phrase '{phrase}' could not be found on the page.")
+    return None
 
 def process_pdf(file_path, output_folder, redaction_specs):
     """Process a PDF file and apply redactions based on specifications."""
@@ -170,10 +105,8 @@ def process_pdf(file_path, output_folder, redaction_specs):
         logger.info(f"Text to be redacted for page {page_num + 1}: {redacted_word_list}\n")
         
         for redacted_word in redacted_word_list:
-            if " " not in redacted_word:
-                specific_granularity_bounding(page, redacted_word)
-            else:
-                generic_granularity_bounding(page, redacted_word)
+            bound_phrase(page, redacted_word)
+
         tqdm.write(f"Applied redactions on page {page_num + 1}")      
         page.apply_redactions()
     
@@ -195,7 +128,8 @@ if __name__ == "__main__":
 
     os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
-    specs = load_redaction_specs(SPEC_FILE)
+    with open(SPEC_FILE, 'r') as file:
+        specs = file.read().strip()
 
     redact_pdf(INPUT_FOLDER, PARTIALLY_REDACTED_FOLDER, OUTPUT_FOLDER, specs)
 
