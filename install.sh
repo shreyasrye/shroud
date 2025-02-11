@@ -16,8 +16,8 @@ if ! command_exists pip; then
 fi
 
 echo "Installing dependencies..."
-pip install --upgrade pip
-pip install -r requirements.txt
+python3 -m pip install --upgrade pip
+python3 -m pip install -r requirements.txt
 
 echo "Creating necessary folders..."
 mkdir -p input_pdfs

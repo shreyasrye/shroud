@@ -1,10 +1,14 @@
 #!/bin/bash
 set -e
 
-echo "Running text redaction..."
+# Set Tesseract environment variables
+export TESSDATA_PREFIX="/usr/local/share/tessdata"
+export TESSERACT_CMD="/usr/local/bin/tesseract"
+
+echo "Running Redaction..."
 python3 redact_text.py
 
-echo "Running image redaction..."
-python3 redact_images.py
+echo "Saving changes to files..."
+sync
 
 echo "Redaction process completed successfully!"
