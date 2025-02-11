@@ -16,9 +16,9 @@ def redact_pdf(input_folder, intermediate_folder, output_folder, redaction_specs
     """Redact text in PDF files based on specifications."""
     pdf_files = [f for f in os.listdir(input_folder) if f.endswith(".pdf")]
     for pdf_file in tqdm(pdf_files, desc="Processing PDFs"):
-        intermediate_path = process_pdf(os.path.join(input_folder, pdf_file), intermediate_folder, redaction_specs)
-        tqdm.write(f"Reprocessing: {intermediate_path}")
-        process_pdf(intermediate_path, output_folder, redaction_specs)
+        intermediate_path = process_pdf(os.path.join(input_folder, pdf_file), intermediate_folder, redaction_specs, ocr_pass=False)
+        tqdm.write(f"Reprocessing PDFs with OCR: {intermediate_path}")
+        process_pdf(intermediate_path, output_folder, redaction_specs, ocr_pass=True)
 
 def chunk_text_sliding_window(text, max_chunk_size=10):
     """
@@ -32,10 +32,32 @@ def chunk_text_sliding_window(text, max_chunk_size=10):
     for i in range(0, len(words), max_chunk_size // 2):
         chunk = " ".join(words[i:i + max_chunk_size])
         chunks.append(chunk)
-        if i + max_chunk_size >= len(words):\
+        if i + max_chunk_size >= len(words):
             break
 
     return chunks
+
+def bound_words(page, word_ls):
+    """
+    Annotates words in a PDF page by creating bounding boxes around each word.
+    
+    Args:
+        page (pymupdf.Page): The PyMuPDF page object.
+        word_ls (list of tuples): List of (x0, y0, x1, y1, "word") tuples.
+    
+    Returns:
+        list: List of bounding box annotations applied.
+    """
+    bounding_boxes = []
+    
+    for word_data in word_ls:
+        x0, y0, x1, y1, word = word_data 
+        rect = pymupdf.Rect(x0, y0, x1, y1)
+
+        page.add_redact_annot(rect, fill=(0, 0, 0))
+        bounding_boxes.append(rect)
+    
+    return bounding_boxes
 
 def bound_phrase(page, phrase):
     """
@@ -59,7 +81,7 @@ def bound_phrase(page, phrase):
         logger.warning(f"Phrase '{phrase}' could not be found on the page.")
     return None
 
-def process_pdf(file_path, output_folder, redaction_specs):
+def process_pdf(file_path, output_folder, redaction_specs, ocr_pass=False):
     """Process a PDF file and apply redactions based on specifications."""
     doc = pymupdf.open(file_path)
     try:
@@ -71,14 +93,19 @@ def process_pdf(file_path, output_folder, redaction_specs):
         return
     client = OpenAI(api_key=config["openai"]["api_key"])
     for page_num, page in enumerate(tqdm(doc, desc="Processing Pages")):
-        page_text = page.get_text("text")
+        tp = page.get_textpage_ocr()
+        word_bounds = []
+        if ocr_pass:
+            word_bounds = page.get_text("words", textpage=tp)
+        page_text = page.get_text(textpage=tp)
         
         with open(PROMPT_FILE) as prompt_file:
             prompt_template = prompt_file.read()
 
         prompt = prompt_template.format(
             page_text=page_text,
-            redaction_specs=redaction_specs
+            redaction_specs=redaction_specs,
+            word_bounds=word_bounds
         )
         response = client.chat.completions.create(
             model="gpt-4o",
@@ -98,14 +125,18 @@ def process_pdf(file_path, output_folder, redaction_specs):
         )
 
         redacted_words = json.loads(response.choices[0].message.content)
+        tqdm.write(str(redacted_words))
         redacted_word_list = redacted_words["redactions"]
         logger.info(f"\n_____________________________")
         logger.info(f"| PAGE {page_num + 1} REDACTION RESULTS |")
         logger.info(f"_____________________________\n")
         logger.info(f"Text to be redacted for page {page_num + 1}: {redacted_word_list}\n")
+        logger.info(f"Bounded words identified by OCR: {redacted_words['bounds']}")
         
         for redacted_word in redacted_word_list:
             bound_phrase(page, redacted_word)
+        if redacted_words['bounds']:
+            bound_words(page,redacted_words['bounds'])
 
         tqdm.write(f"Applied redactions on page {page_num + 1}")      
         page.apply_redactions()
@@ -122,6 +153,9 @@ if __name__ == "__main__":
     OUTPUT_FOLDER = "./output_pdfs"
     SPEC_FILE = "./entities_to_redact.txt" 
     PROMPT_FILE = "./prompts/redaction_prompt.txt"
+    
+    os.environ["TESSDATA_PREFIX"] = "/usr/local/share/tessdata"
+    os.environ["TESSERACT_CMD"] = "/usr/local/bin/tesseract"
 
     if not os.path.exists(PARTIALLY_REDACTED_FOLDER):
         os.makedirs(PARTIALLY_REDACTED_FOLDER)
