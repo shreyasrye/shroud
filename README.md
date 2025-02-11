@@ -18,6 +18,7 @@ These scripts perform **text and image redaction** on PDFs using AI-powered text
 Ensure you have the following installed:
 - Python 3.8 or higher
 - pip (Python package manager)
+- [**Tesseract OCR**](https://github.com/tesseract-ocr/tesseract): Required for redacting text from images and flat PDFs.
 
 To insall the required packages, run:
 
@@ -27,6 +28,28 @@ If necessary, make the script executable before running:
 
 `chmod +x install.sh`
 
+---
+
+## Tesseract Configuration
+Shroud requires **Tesseract’s trained models (`tessdata`)**.  
+By default, the script is configured for **macOS**, using:
+
+```python
+os.environ["TESSDATA_PREFIX"] = "/usr/local/share/tessdata"
+os.environ["TESSERACT_CMD"] = "/usr/local/bin/tesseract"
+```
+
+If you are on **Linux** or **Windows**, update these values accordingly:
+
+* **Linux:** `/usr/share/tesseract-ocr/5/tessdata`
+* **Windows:** `C:\Program Files\Tesseract-OCR\tessdata`
+
+To manually override, set the environment variables before running the script:
+
+```bash
+export TESSDATA_PREFIX="/path/to/tessdata"
+export TESSERACT_CMD="/path/to/tesseract"
+```
 ---
 
 ## OpenAI key configuration:
