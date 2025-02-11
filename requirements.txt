@@ -2,3 +2,5 @@ PyMuPDF==1.25.2
 openai==1.58.1
 Pillow==10.2.0
 tqdm==4.66.2
+pytesseract==0.3.13
+numpy<2.0,>=1.26.0
