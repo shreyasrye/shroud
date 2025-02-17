@@ -9,11 +9,23 @@ from datetime import datetime
 if not os.path.exists("logs"):
     os.makedirs("logs")
 log_filename = f"logs/redact_text_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
-logging.basicConfig(filename=log_filename, level=logging.INFO, format='%(message)s')
+logging.basicConfig(
+    filename=log_filename, 
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+    )
 logger = logging.getLogger()
 
 def redact_pdf(input_folder, intermediate_folder, output_folder, redaction_specs):
-    """Redact text in PDF files based on specifications."""
+    """
+    Redact text in PDF files based on specifications.
+    Args:
+        input_folder (str): The path to the input folder.
+        intermediate_folder (str): The path to the intermediate folder.
+        output_folder (str): The path to the output folder.
+        redaction_specs (str): The redaction specifications.
+    """
     pdf_files = [f for f in os.listdir(input_folder) if f.endswith(".pdf")]
     for pdf_file in tqdm(pdf_files, desc="Processing PDFs"):
         intermediate_path = process_pdf(os.path.join(input_folder, pdf_file), intermediate_folder, redaction_specs, ocr_pass=False)
@@ -23,6 +35,13 @@ def redact_pdf(input_folder, intermediate_folder, output_folder, redaction_specs
 def chunk_text_sliding_window(text, max_chunk_size=10):
     """
     Breaks a sentence into overlapping chunks while preserving word order.
+
+    Args:
+        text (str): The input text.
+        max_chunk_size (int): The maximum chunk size.
+
+    Returns:
+        list: List of overlapping chunks.
     """
     words = text.split()  # Split phrase into words
     if len(words) <= max_chunk_size:
@@ -82,7 +101,15 @@ def bound_phrase(page, phrase):
     return None
 
 def process_pdf(file_path, output_folder, redaction_specs, ocr_pass=False):
-    """Process a PDF file and apply redactions based on specifications."""
+    """
+    Process a PDF file and apply redactions based on specifications.
+
+    Args:
+        file_path (str): The path to the PDF file.
+        output_folder (str): The path to the output folder.
+        redaction_specs (str): The redaction specifications.
+        ocr_pass (bool): Whether to perform OCR on the PDF pages.
+    """
     doc = pymupdf.open(file_path)
     try:
         with open("config.json") as config_file:
@@ -93,7 +120,7 @@ def process_pdf(file_path, output_folder, redaction_specs, ocr_pass=False):
         return
     client = OpenAI(api_key=config["openai"]["api_key"])
     for page_num, page in enumerate(tqdm(doc, desc="Processing Pages")):
-        tp = page.get_textpage_ocr()
+        tp = page.get_textpage_ocr(language="eng")
         word_bounds = []
         if ocr_pass:
             word_bounds = page.get_text("words", textpage=tp)
@@ -125,15 +152,13 @@ def process_pdf(file_path, output_folder, redaction_specs, ocr_pass=False):
         )
 
         redacted_words = json.loads(response.choices[0].message.content)
-        tqdm.write(str(redacted_words))
-        redacted_word_list = redacted_words["redactions"]
-        logger.info(f"\n_____________________________")
-        logger.info(f"| PAGE {page_num + 1} REDACTION RESULTS |")
-        logger.info(f"_____________________________\n")
-        logger.info(f"Text to be redacted for page {page_num + 1}: {redacted_word_list}\n")
-        logger.info(f"Bounded words identified by OCR: {redacted_words['bounds']}")
         
-        for redacted_word in redacted_word_list:
+        logger.info("\n")
+        logger.info(f"Page {page_num + 1} Redaction Results:")
+        logger.info(f"Redacted Words: {redacted_words["redactions"]}")
+        logger.info(f"OCR Identified Bounds: {redacted_words['bounds']}")
+        
+        for redacted_word in redacted_words["redactions"]:
             bound_phrase(page, redacted_word)
         if redacted_words['bounds']:
             bound_words(page,redacted_words['bounds'])
