@@ -111,6 +111,7 @@ def process_pdf(file_path, output_folder, redaction_specs, ocr_pass=False):
         ocr_pass (bool): Whether to perform OCR on the PDF pages.
     """
     doc = pymupdf.open(file_path)
+    
     try:
         with open("config.json") as config_file:
             config = json.load(config_file)
@@ -119,8 +120,9 @@ def process_pdf(file_path, output_folder, redaction_specs, ocr_pass=False):
         logger.error("Config file not found.")
         return
     client = OpenAI(api_key=config["openai"]["api_key"])
+
     for page_num, page in enumerate(tqdm(doc, desc="Processing Pages")):
-        tp = page.get_textpage_ocr(language="eng")
+        tp = page.get_textpage_ocr(language="eng", dpi=400, full=True)
         word_bounds = []
         if ocr_pass:
             word_bounds = page.get_text("words", textpage=tp)
