@@ -17,16 +17,8 @@ Instructions:
 - Ensure all variations of the specified terms are included, such as split words, hyphenated forms, or alternate spellings.
 - Ensure that all the words/phrases returned are actually detected on the page.
 
-- If word bounds are provided in the word_bounds parameter, they'll be provided as a list of tuples, where each tuple contains information on a word and its bounds: (x0, y0, x1, y1, "word", block_no, line_no, word_no). 
-    - If word bounds are provided, look at every word/phrase that you have identified that needs to be redacted, and provide them as values for the "bounds" key in the output JSON. The format should be a list of tuples, with each tuple corresponding to a word and having 5 values: (x0, y0, x1, y1, "word").
-    - Example: If "Adam Smith" ends up as one of the values in the "redactions": [] list, correspondingly add (x0, y0, x1, y1, "Adam") and (x2, y2, x2, y2, "Smith") to "bounds".
-    - if word bounds are NOT provided, leave "bounds" an empty list: "bounds":[]
-
 Provided page text:
 {page_text}
-
-Provided word-granularity bounds (optional):
-{word_bounds}
 
 Redaction Specifications:
 {redaction_specs}
@@ -37,14 +29,9 @@ Expected response format (provide only this JSON):
         "Word to redact",
         "Another word to redact",
         ...
-    ], 
-    "bounds": [
-        (x0, y0, x1, y1, "word1"),
-        (x2, y2, x3, y4, "word2"),
-        ...
     ]
 }}
 
-- If no words/phrases of interest are found in the page text, return JSON with an empty list: {{"redactions": [], "bounds":[]}}
+- If no words/phrases of interest are found in the page text, return JSON with an empty list: {{"redactions": []}}
 
 Ensure the response aligns with the granularity requested in the specifications.
