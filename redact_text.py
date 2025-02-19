@@ -17,20 +17,17 @@ logging.basicConfig(
     )
 logger = logging.getLogger()
 
-def redact_pdf(input_folder, intermediate_folder, output_folder, redaction_specs):
+def redact_pdf(input_folder, output_folder, redaction_specs):
     """
     Redact text in PDF files based on specifications.
     Args:
         input_folder (str): The path to the input folder.
-        intermediate_folder (str): The path to the intermediate folder.
         output_folder (str): The path to the output folder.
         redaction_specs (str): The redaction specifications.
     """
     pdf_files = [f for f in os.listdir(input_folder) if f.endswith(".pdf")]
     for pdf_file in tqdm(pdf_files, desc="Processing PDFs"):
-        intermediate_path = process_pdf(os.path.join(input_folder, pdf_file), intermediate_folder, redaction_specs, ocr_pass=False)
-        tqdm.write(f"Reprocessing PDFs with OCR: {intermediate_path}")
-        process_pdf(intermediate_path, output_folder, redaction_specs, ocr_pass=True)
+        process_pdf(os.path.join(input_folder, pdf_file), output_folder, redaction_specs)
 
 def chunk_text_sliding_window(text, max_chunk_size=10):
     """
@@ -56,31 +53,13 @@ def chunk_text_sliding_window(text, max_chunk_size=10):
 
     return chunks
 
-def bound_words(page, word_ls):
-    """
-    Annotates words in a PDF page by creating bounding boxes around each word.
-    
-    Args:
-        page (pymupdf.Page): The PyMuPDF page object.
-        word_ls (list of tuples): List of (x0, y0, x1, y1, "word") tuples.
-    
-    Returns:
-        list: List of bounding box annotations applied.
-    """
-    bounding_boxes = []
-    
-    for word_data in word_ls:
-        x0, y0, x1, y1, word = word_data 
-        rect = pymupdf.Rect(x0, y0, x1, y1)
-
-        page.add_redact_annot(rect, fill=(0, 0, 0))
-        bounding_boxes.append(rect)
-    
-    return bounding_boxes
-
-def bound_phrase(page, phrase):
+def bound_phrase(page, phrase, textpage=None):
     """
     Searches for a phrase in a PDF page by breaking it into overlapping chunks.
+
+    Args:
+        page (pymupdf.Page): The PyMuPDF page object.
+        phrase (str): The phrase to search for.
     """
     normalized_phrase = phrase.replace("“", '"').replace("”", '"')
     chunks = chunk_text_sliding_window(normalized_phrase)
@@ -88,7 +67,7 @@ def bound_phrase(page, phrase):
     all_bboxes = []
     
     for chunk in chunks:
-        bboxes = page.search_for(chunk)
+        bboxes = page.search_for(chunk, textpage=textpage)
         if bboxes:
             all_bboxes.extend(bboxes)
 
@@ -100,7 +79,7 @@ def bound_phrase(page, phrase):
         logger.warning(f"Phrase '{phrase}' could not be found on the page.")
     return None
 
-def process_pdf(file_path, output_folder, redaction_specs, ocr_pass=False):
+def process_pdf(file_path, output_folder, redaction_specs):
     """
     Process a PDF file and apply redactions based on specifications.
 
@@ -108,7 +87,6 @@ def process_pdf(file_path, output_folder, redaction_specs, ocr_pass=False):
         file_path (str): The path to the PDF file.
         output_folder (str): The path to the output folder.
         redaction_specs (str): The redaction specifications.
-        ocr_pass (bool): Whether to perform OCR on the PDF pages.
     """
     doc = pymupdf.open(file_path)
     
@@ -123,10 +101,10 @@ def process_pdf(file_path, output_folder, redaction_specs, ocr_pass=False):
 
     for page_num, page in enumerate(tqdm(doc, desc="Processing Pages")):
         tp = page.get_textpage_ocr(language="eng", dpi=400, full=True)
-        word_bounds = []
-        if ocr_pass:
-            word_bounds = page.get_text("words", textpage=tp)
         page_text = page.get_text(textpage=tp)
+
+        # Uncomment the following line to log the raw extracted text from each page (it can be messy)
+        # logging.info(f"Text extracted from page {page_num + 1}: \n {page_text}") 
         
         with open(PROMPT_FILE) as prompt_file:
             prompt_template = prompt_file.read()
@@ -134,36 +112,41 @@ def process_pdf(file_path, output_folder, redaction_specs, ocr_pass=False):
         prompt = prompt_template.format(
             page_text=page_text,
             redaction_specs=redaction_specs,
-            word_bounds=word_bounds
         )
-        response = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a PDF redaction assistant. Your task is to adaptively redact text based on "
-                        "the Redaction Specifications. You must follow the instructions strictly and return "
-                        "results only in the required JSON format."
-                    )
-                },
-                {"role": "user", "content": prompt},
-            ],
-            response_format={ "type": "json_object" },
-            temperature=0.0
-        )
-
-        redacted_words = json.loads(response.choices[0].message.content)
+        try:
+            response = client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are a PDF redaction assistant. Your task is to adaptively redact text based on "
+                            "the Redaction Specifications. You must follow the instructions strictly and return "
+                            "results only in the required JSON format."
+                        )
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                response_format={ "type": "json_object" },
+                temperature=0.0
+            )
+        except Exception as e:
+            logger.error(f"OpenAI error: {e}")
+            tqdm.write(f"OpenAI error: {e}")
+            return
+        try:
+            redacted_words = json.loads(response.choices[0].message.content)
+        except Exception as e:
+            logger.error(f"JSON parsing error: {e}, check LLM output")
+            tqdm.write(f"JSON parsing error: {e}, check LLM output")
+            return
         
         logger.info("\n")
         logger.info(f"Page {page_num + 1} Redaction Results:")
         logger.info(f"Redacted Words: {redacted_words["redactions"]}")
-        logger.info(f"OCR Identified Bounds: {redacted_words['bounds']}")
         
         for redacted_word in redacted_words["redactions"]:
-            bound_phrase(page, redacted_word)
-        if redacted_words['bounds']:
-            bound_words(page,redacted_words['bounds'])
+            bound_phrase(page, redacted_word, textpage=tp)
 
         tqdm.write(f"Applied redactions on page {page_num + 1}")      
         page.apply_redactions()
@@ -176,7 +159,6 @@ def process_pdf(file_path, output_folder, redaction_specs, ocr_pass=False):
 
 if __name__ == "__main__":
     INPUT_FOLDER = "./input_pdfs" 
-    PARTIALLY_REDACTED_FOLDER = "./partially_redacted_pdfs"
     OUTPUT_FOLDER = "./output_pdfs"
     SPEC_FILE = "./entities_to_redact.txt" 
     PROMPT_FILE = "./prompts/redaction_prompt.txt"
@@ -184,14 +166,11 @@ if __name__ == "__main__":
     os.environ["TESSDATA_PREFIX"] = "/usr/local/share/tessdata"
     os.environ["TESSERACT_CMD"] = "/usr/local/bin/tesseract"
 
-    if not os.path.exists(PARTIALLY_REDACTED_FOLDER):
-        os.makedirs(PARTIALLY_REDACTED_FOLDER)
-
     os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
     with open(SPEC_FILE, 'r') as file:
         specs = file.read().strip()
 
-    redact_pdf(INPUT_FOLDER, PARTIALLY_REDACTED_FOLDER, OUTPUT_FOLDER, specs)
+    redact_pdf(INPUT_FOLDER, OUTPUT_FOLDER, specs)
 
     tqdm.write("Redaction completed.")
