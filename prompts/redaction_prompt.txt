@@ -1,21 +1,13 @@
 Instructions:
-- Follow the Redaction Specifications precisely.
-- If the specifications ask for **specific granularity**, redact only the terms or phrases specified the provided text.
-- If the specifications ask for **general granularity**, redact the smallest meaningful context (e.g. phrases, sentences or paragraphs) that includes references to the specified terms.
-    - If the smallest meaningful context is:
-        - a word: Provide the exact quote of the word only
-        - a phrase: Provide the exact quote of the phrase only
-        - a sentence: Provide the exact quote of the sentence only, from beginning to end.
-        - a paragraph: provide the exact quote of the entire paragraph, from beginning to end.
-
-- For specific words of interest or generic context identified based on a certain word, identify all similar variants of said word, including:
+* Review the redeaction specifications carefully
+* Identify the exact words, sentences or phrases in the Provided page text that match the redaction specifications
+* For specific words of that match the redaction specification, identify all similar variants of said word, including:
     - Common typos and misspellings (e.g., for "bitcoin", include "bitkoin", "bit coin", "bitcoyn").
     - Hyphenated or split forms (e.g., "Doge-coin", "Doge coin").
     - Case variations (e.g., "dogecoin", "DOGECOIN", "Dogecoin").
     - Contextual references (e.g., sentences or paragraphs that reference these variants in casual or descriptive ways).
-    
-- Ensure all variations of the specified terms are included, such as split words, hyphenated forms, or alternate spellings.
-- Ensure that all the words/phrases returned are actually detected on the page.
+* Ensure all variations of the specified terms are included, such as split words, hyphenated forms, or alternate spellings.
+* Ensure that all the words/phrases returned are actually present in the provided page text.
 
 Provided page text:
 {page_text}
@@ -34,4 +26,4 @@ Expected response format (provide only this JSON):
 
 - If no words/phrases of interest are found in the page text, return JSON with an empty list: {{"redactions": []}}
 
-Ensure the response aligns with the granularity requested in the specifications.
+The list of words, phrases or sentences to redact are:
