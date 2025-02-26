@@ -29,6 +29,7 @@ def redact_pdf(input_folder, output_folder, redaction_specs):
     for pdf_file in tqdm(pdf_files, desc="Processing PDFs"):
         process_pdf(os.path.join(input_folder, pdf_file), output_folder, redaction_specs)
 
+
 def chunk_text_sliding_window(text, max_chunk_size=10):
     """
     Breaks a sentence into overlapping chunks while preserving word order.
@@ -100,8 +101,11 @@ def process_pdf(file_path, output_folder, redaction_specs):
     client = OpenAI(api_key=config["openai"]["api_key"])
 
     for page_num, page in enumerate(tqdm(doc, desc="Processing Pages")):
-        tp = page.get_textpage_ocr(language="eng", dpi=400, full=True)
+        tp = page.get_textpage()
         page_text = page.get_text(textpage=tp)
+        if not page_text:
+            tp = page.get_textpage_ocr(language="eng", dpi=400, full=True)
+            page_text = page.get_text(textpage=tp)
 
         # Uncomment the following line to log the raw extracted text from each page (it can be messy)
         # logging.info(f"Text extracted from page {page_num + 1}: \n {page_text}") 
