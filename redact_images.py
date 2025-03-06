@@ -1,4 +1,5 @@
 import os
+import sys
 import fitz
 import json
 from PIL import Image
@@ -162,9 +163,13 @@ def process_pdf(input_folder, output_folder, redaction_specs):
         logger.warning(f"Error processing PDFs in folder '{input_folder}': {e}")
         raise
 
-if __name__ == "__main__":
-    INPUT_FOLDER = "./input_pdfs"
-    OUTPUT_FOLDER = "./output_pdfs"
+def main():
+    if len(sys.argv) != 3:
+        print("Usage: python redact_images.py <input_folder> <output_folder>")
+        sys.exit(1)
+
+    INPUT_FOLDER = sys.argv[1]
+    OUTPUT_FOLDER = sys.argv[2]
     SPEC_FILE = "./entities_to_redact.txt"
 
     os.makedirs(OUTPUT_FOLDER, exist_ok=True)
@@ -177,3 +182,6 @@ if __name__ == "__main__":
         logger.info("Image-based redaction completed successfully.")
     except Exception as e:
         logger.warning(f"Critical error: {e}")
+
+if __name__ == "__main__":
+    main()

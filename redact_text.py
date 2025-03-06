@@ -1,4 +1,5 @@
 import os
+import sys
 import pymupdf
 import json
 from openai import OpenAI
@@ -17,7 +18,7 @@ logging.basicConfig(
     )
 logger = logging.getLogger()
 
-def redact_pdf(input_folder, output_folder, redaction_specs):
+def redact_pdf(input_folder, output_folder, redaction_specs, prompt_file):
     """
     Redact text in PDF files based on specifications.
     Args:
@@ -27,7 +28,7 @@ def redact_pdf(input_folder, output_folder, redaction_specs):
     """
     pdf_files = [f for f in os.listdir(input_folder) if f.endswith(".pdf")]
     for pdf_file in tqdm(pdf_files, desc="Processing PDFs"):
-        process_pdf(os.path.join(input_folder, pdf_file), output_folder, redaction_specs)
+        process_pdf(os.path.join(input_folder, pdf_file), output_folder, redaction_specs, prompt_file)
 
 
 def chunk_text_sliding_window(text, max_chunk_size=10):
@@ -80,7 +81,7 @@ def bound_phrase(page, phrase, textpage=None):
         logger.warning(f"Phrase '{phrase}' could not be found on the page.")
     return None
 
-def process_pdf(file_path, output_folder, redaction_specs):
+def process_pdf(file_path, output_folder, redaction_specs, prompt_file):
     """
     Process a PDF file and apply redactions based on specifications.
 
@@ -110,8 +111,8 @@ def process_pdf(file_path, output_folder, redaction_specs):
         # Uncomment the following line to log the raw extracted text from each page (it can be messy)
         # logging.info(f"Text extracted from page {page_num + 1}: \n {page_text}") 
         
-        with open(PROMPT_FILE) as prompt_file:
-            prompt_template = prompt_file.read()
+        with open(prompt_file) as pf:
+            prompt_template = pf.read()
 
         prompt = prompt_template.format(
             page_text=page_text,
@@ -161,12 +162,16 @@ def process_pdf(file_path, output_folder, redaction_specs):
     tqdm.write(f"Processed and saved: {output_path}")
     return output_path
 
-if __name__ == "__main__":
-    INPUT_FOLDER = "./input_pdfs" 
-    OUTPUT_FOLDER = "./output_pdfs"
-    SPEC_FILE = "./entities_to_redact.txt" 
+def main():
+    if len(sys.argv) != 3:
+        print("Usage: python redact_text.py <input_folder> <output_folder>")
+        sys.exit(1)
+
+    INPUT_FOLDER = sys.argv[1]
+    OUTPUT_FOLDER = sys.argv[2]
+    SPEC_FILE = "./entities_to_redact.txt"
     PROMPT_FILE = "./prompts/redaction_prompt.txt"
-    
+
     os.environ["TESSDATA_PREFIX"] = "/usr/local/share/tessdata"
     os.environ["TESSERACT_CMD"] = "/usr/local/bin/tesseract"
 
@@ -175,6 +180,9 @@ if __name__ == "__main__":
     with open(SPEC_FILE, 'r') as file:
         specs = file.read().strip()
 
-    redact_pdf(INPUT_FOLDER, OUTPUT_FOLDER, specs)
+    redact_pdf(INPUT_FOLDER, OUTPUT_FOLDER, specs, PROMPT_FILE)
 
     tqdm.write("Redaction completed.")
+
+if __name__ == "__main__":
+    main()
