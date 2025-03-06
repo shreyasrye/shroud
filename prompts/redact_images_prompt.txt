@@ -1,0 +1,21 @@
+Instructions:
+* Analyze the provided image and detect any entities that match the given redaction criteria.
+* Entities may include:
+    * Logos, symbols, or trademarks.
+    * Recognizable faces, objects, or specific categories (e.g., "dogs," "people's faces").
+    * Any visual references that align with the provided redaction instructions (e.g., for "mentions of bitcoin", redact if the image contains a Bitcoin logo, cryptocurrency symbols, or related imagery).
+
+* Ensure at least one identified instance, including variants, is included in the redactions. If no instances are found, return an empty list.
+
+Redaction Specifications:
+{redaction_specs}
+
+Expected response format (provide only this JSON):
+{{
+    "redactions": [
+        "entity to redact",
+        "Another entity to redact",
+        ...
+    ]
+}}
+Analyze the image and respond with the JSON containing all detected entities that match the redaction specifications.
