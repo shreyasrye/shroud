@@ -11,14 +11,14 @@ if [ "$#" -eq 0 ]; then
 elif [ "$#" -eq 1 ] && [ "$1" == "text" ]; then
     RUN_TEXT=true
     RUN_IMAGES=false
-elif [ "$#" -eq 1 ] && [ "$1" == "images" ]; then
-    echo "Error: 'images' cannot be run alone. Use 'text images' instead."
+elif [ "$#" -eq 1 ] && [ "$1" == "image" ]; then
+    echo "Error: 'image' cannot be run alone. Use 'text image' instead."
     exit 1
-elif [ "$#" -eq 2 ] && [[ "$1" == "text" && "$2" == "images" ]]; then
+elif [ "$#" -eq 2 ] && [[ "$1" == "text" && "$2" == "image" ]]; then
     RUN_TEXT=true
     RUN_IMAGES=true
 else
-    echo "Usage: $0 [text] [images]"
+    echo "Usage: $0 [text] [image]"
     exit 1
 fi
 
